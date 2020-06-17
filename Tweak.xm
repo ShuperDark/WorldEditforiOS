@@ -1,40 +1,22 @@
-#import "../substrate.h"
-#import <UIKit/UIKit.h>
-#import <mach-o/dyld.h>
-#import <initializer_list>
-#import <vector>
-#import <map>
-#import <mach-o/dyld.h>
-#import <string>
-#import <Foundation/Foundation.h>
-#import <UIKit/UIKit.h>
-#import <initializer_list>
-#import <vector>
-#import <mach-o/dyld.h>
-#import <UIKit/UIKit.h>
-#import <iostream>
-#import <stdio.h>
-#include <sstream>
-#include <sys/sysctl.h>
-#include <net/if.h>
-#include <net/if_dl.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <string.h>
-#include <algorithm>
-#include <fstream>
-#include <ifaddrs.h>
-#include <stdint.h>
-#include <dlfcn.h>
+#import "substrate.h"
+#include <string>
+#include <mach-o/dyld.h>
 
-typedef struct {
+
+struct Level;
+struct GuiData;
+struct BlockSource;
+struct Block;
+struct GameMode;
+
+struct Entity {
 	char filler[64];
-	uintptr_t* level;
+	Level* level;
 	char filler2[104];
-	uintptr_t* region;
-} Entity;
+	BlockSource* region;
+};
 
-struct Player :public Entity {
+struct Player : public Entity {
 	char filler[4400];
 
 	uintptr_t* inventory;
@@ -43,41 +25,20 @@ struct Player :public Entity {
 struct BlockID {
 	unsigned char value;
 
-	BlockID() {
-		this->value = 1;
-	}
-
-	BlockID(unsigned char val) {
-		this->value = val;
-	}
-
-	BlockID(BlockID const& other) {
-		this->value = other.value;
-	}
-
-	bool operator==(char v) {
-		return this->value == v;
-	}
-
-	bool operator==(int v) {
-		return this->value == v;
-	}
-
-	bool operator==(BlockID v) {
-		return this->value == v.value;
-	}
-
+	BlockID() { this->value = 1; }
+	BlockID(unsigned char val) { this->value = val; }
+	BlockID(BlockID const& other) { this->value = other.value; }
+	bool operator==(char v) { return this->value == v; }
+	bool operator==(int v) { return this->value == v; }
+	bool operator==(BlockID v) { return this->value == v.value; }
+	operator unsigned char() { return this->value; }
 	BlockID& operator=(const unsigned char& v) {
 		this->value = v;
 		return *this;
 	}
-
-	operator unsigned char() {
-		return this->value;
-	}
 };
 
-typedef struct {
+struct Item {
 	uintptr_t** vtable;
 	uint8_t maxStackSize;
 	int idk;
@@ -103,118 +64,98 @@ typedef struct {
 	float idk6;
 	uintptr_t* icon;
 	char filler[44];
-} Item;
+};
 
-typedef struct {
+struct ItemInstance {
 	uint8_t count;
 	uint16_t aux;
 	uintptr_t* tag;
 	Item* item;
-	uintptr_t* block;
+	Block* block;
 	int idk[3];
-} ItemInstance;
+};
 
-typedef struct {
+struct BlockPos {
 	int x, y, z;
-} BlockPos;
+};
+
+struct Vec3 {
+	int x, y, z;
+};
+
 
 static Item** Item$mItems;
-
 static ItemInstance*(*Player$getSelectedItem)(Player*);
+static int(*ItemInstance$getId)(ItemInstance*);
+static BlockID (*BlockSource$getBlockID)(BlockSource*, int, int, int);
+static int(*BlockSource$getData)(BlockSource*, int, int, int);
+static void(*BlockSource$setBlockAndData)(BlockSource*, const BlockPos&, BlockID, unsigned char, int);
+static void (*GuiData$displayClientMessage)(GuiData*, const std::string&);
 
-static int(*ItemInstance$getId)(void*);
+GuiData* guiData = NULL;
+BlockSource* now_region;
 
-static BlockID (*BlockSource$getBlockID)(uintptr_t*, int, int, int);
-
-static int(*BlockSource$getData)(uintptr_t*, int, int, int);
-
-static void(*BlockSource$setBlock)(uintptr_t*, int, int, int, BlockID, int);
-
-uintptr_t* guiData = NULL;
-
-int pos1X = 0, pos1Y = 0, pos1Z = 0;
-int pos2X = 0, pos2Y = 0, pos2Z = 0;
-
-int minX = 0, minY = 0, minZ = 0;
-int maxX = 0, maxY = 0, maxZ = 0;
+BlockPos pos1, pos2;
+Vec3 min, max;
 
 std::string set_cmd = "wait_msg";
 
-uintptr_t* now_region;
 
-void (*GuiData_displayClientMessage)(uintptr_t*, const std::string&);
-void _GuiData_displayClientMessage(const std::string&);
 
-void (*GuiData_displayChatMessage)(uintptr_t*, const std::string&, const std::string&);
-void _GuiData_displayChatMessage(const std::string&, const std::string&);
-
-void (*GuiData_tick)(uintptr_t*);
-void _GuiData_tick(uintptr_t* _guiData) {
-	guiData = _guiData;
+void (*GuiData_tick)(GuiData*);
+void _GuiData_tick(GuiData* _guiData) {
+	if(!guiData)
+		guiData = _guiData;
 
 	GuiData_tick(_guiData);
 }
 
-void _GuiData_displayChatMessage(const std::string& owner, const std::string& msg) {
-	if(guiData != NULL) {
-		GuiData_displayChatMessage(guiData, owner, msg);
-	}
+void (*GuiData_displayChatMessage)(GuiData*, const std::string&, const std::string&);
+void _GuiData_displayChatMessage(GuiData* self, const std::string& owner, const std::string& msg) {
+	//GuiData_displayChatMessage(self, owner, msg);
+
 	set_cmd = msg;
 
-	minX = std::min(pos1X, pos2X);
-	maxX = std::max(pos1X, pos2X);
-	minY = std::min(pos1Y, pos2Y);
-	maxY = std::max(pos1Y, pos2Y);
-	minZ = std::min(pos1Z, pos2Z);
-	maxZ = std::max(pos1Z, pos2Z);
+	min.x = std::min(pos1.x, pos2.x);
+	max.x = std::max(pos1.x, pos2.x);
+	min.y = std::min(pos1.y, pos2.y);
+	max.y = std::max(pos1.y, pos2.y);
+	min.z = std::min(pos1.z, pos2.z);
+	max.z = std::max(pos1.z, pos2.z);
 
-	for(int i = 0; i <= 255; i++) {
-		for(int j = 0; j <= 15; j++) {
-			if(set_cmd == "//set " + std::to_string(i) + ":" + std::to_string(j)) {
+			if(set_cmd == "set 4:0") {
 
-				unsigned char block_id = i;
+				//unsigned char block_id = i;
 
-				for(int ix = minX; ix <= maxX; ix++) {
-					for(int iy = minY; iy <= maxY; iy++) {
-						for(int iz = minZ; iz <= minZ; iz++) {
-							BlockSource$setBlock(now_region, ix, iy, iz, block_id, j);
-						}
-					}
-				}
+				//for(int ix = min.x; ix <= max.x; ix++) {
+					//for(int iy = min.y; iy <= max.y; iy++) {
+						//for(int iz = min.z; iz <= min.z; iz++) {
+							BlockSource$setBlockAndData(now_region, {pos1.x, pos1.y, pos1.z}, 5, 1, 3);
+						//}
+					//}
+				//}
 			}
-		}
-	}
 
 	set_cmd = "wait_msg";
 }
 
-void _GuiData_displayClientMessage(const std::string& msg) {
-	if(guiData != NULL) {
-		GuiData_displayClientMessage(guiData, msg);
-	}
-}
-
-bool (*Item_useOn)(Item*, uintptr_t*, Player*, int, int, int, signed char, float, float, float);
-bool _Item_useOn(Item* self, uintptr_t* inst, Player* player, int x, int y, int z, signed char side, float xx, float yy, float zz) {
+bool (*Item_useOn)(Item*, ItemInstance*, Player*, int, int, int, signed char, float, float, float);
+bool _Item_useOn(Item* self, ItemInstance* inst, Player* player, int x, int y, int z, signed char side, float xx, float yy, float zz) {
 	if(self == Item$mItems[271]) {
-		pos1X = x;
-		pos1Y = y;
-		pos1Z = z;
+		pos1 = {x, y, z};
 
-		GuiData_displayClientMessage(guiData, "§9You got a pos1");
+		GuiData$displayClientMessage(guiData, "§9You set pos1!");
 	}
 
 	return Item_useOn(self, inst, player, x, y, z, side, xx, yy, zz);
 }
 
-bool (*GameMode_creativeDestroyBlock)(uintptr_t*, Player&, BlockPos, signed char);
-bool _GameMode_creativeDestroyBlock(uintptr_t* self, Player& player, BlockPos pos, signed char side) {
+bool (*GameMode_creativeDestroyBlock)(GameMode*, Player&, BlockPos, signed char);
+bool _GameMode_creativeDestroyBlock(GameMode* self, Player& player, BlockPos pos, signed char side) {
 	if(Player$getSelectedItem(&player)->item == Item$mItems[271]) {
-		pos2X = pos.x;
-		pos2Y = pos.y;
-		pos2Z = pos.z;
+		pos2 = pos;
 
-		GuiData_displayClientMessage(guiData, "§cYou got a pos2");
+		GuiData$displayClientMessage(guiData, "§cYou set pos2!");
 
 		return false;
 	}
@@ -224,15 +165,14 @@ bool _GameMode_creativeDestroyBlock(uintptr_t* self, Player& player, BlockPos po
 
 void (*Player_normalTick)(Player*);
 void _Player_normalTick(Player* player) {
-	Player_normalTick(player);
-
 	now_region = player->region;
+
+	Player_normalTick(player);
 }
 
 %ctor {
 	MSHookFunction((void*)(0x100107fc4 + _dyld_get_image_vmaddr_slide(0)), (void*)&_GuiData_tick, (void**)&GuiData_tick);
 	MSHookFunction((void*)(0x10010881c + _dyld_get_image_vmaddr_slide(0)), (void*)&_GuiData_displayChatMessage, (void**)&GuiData_displayChatMessage);
-	MSHookFunction((void*)(0x100108794 + _dyld_get_image_vmaddr_slide(0)), (void*)&_GuiData_displayClientMessage, (void**)&GuiData_displayClientMessage);
 
 	MSHookFunction((void*)(0x100746be0 + _dyld_get_image_vmaddr_slide(0)), (void*)&_Item_useOn, (void**)&Item_useOn);
 
@@ -240,15 +180,16 @@ void _Player_normalTick(Player* player) {
 
 	MSHookFunction((void*)(0x10070ec64 + _dyld_get_image_vmaddr_slide(0)), (void*)&_Player_normalTick, (void**)&Player_normalTick);
 
+
 	Item$mItems = (Item**)(0x1012ae238 + _dyld_get_image_vmaddr_slide(0));
+
+	GuiData$displayClientMessage = (void(*)(GuiData*, const std::string&))(0x100108794 + _dyld_get_image_vmaddr_slide(0));
 
 	Player$getSelectedItem = (ItemInstance*(*)(Player*))(0x10070f5c4 + _dyld_get_image_vmaddr_slide(0));
 
-	ItemInstance$getId = (int(*)(void*))(0x10075700c + _dyld_get_image_vmaddr_slide(0));
+	ItemInstance$getId = (int(*)(ItemInstance*))(0x10075700c + _dyld_get_image_vmaddr_slide(0));
 
-	BlockSource$getBlockID = (BlockID(*)(uintptr_t*, int, int, int))(0x10079c2d0 + _dyld_get_image_vmaddr_slide(0));
-
-	BlockSource$getData = (int(*)(uintptr_t*, int, int, int))(0x10079ddd0 + _dyld_get_image_vmaddr_slide(0));
-
-	BlockSource$setBlock = (void(*)(uintptr_t*, int, int, int, BlockID, int))(0x10079b294 + _dyld_get_image_vmaddr_slide(0));
+	BlockSource$getBlockID = (BlockID(*)(BlockSource*, int, int, int))(0x10079c2d0 + _dyld_get_image_vmaddr_slide(0));
+	BlockSource$getData = (int(*)(BlockSource*, int, int, int))(0x10079ddd0 + _dyld_get_image_vmaddr_slide(0));
+	BlockSource$setBlockAndData = (void(*)(BlockSource*, const BlockPos&, BlockID, unsigned char, int))(0x10079bb6c + _dyld_get_image_vmaddr_slide(0));
 }
