@@ -1,5 +1,6 @@
 #import "substrate.h"
 #include <string>
+#include <vector>
 #include <mach-o/dyld.h>
 
 
@@ -102,6 +103,25 @@ std::string set_cmd = "wait_msg";
 
 
 
+std::vector<std::string> strSplit(const std::string s, char del)
+{
+	std::vector<std::string> tokens;
+	std::string currentToken = "";
+
+	int i = 0;
+	while(s[i] != '\0') {
+		if(s[i] != del) {
+			currentToken += s[i];
+		} else {
+			tokens.push_back(currentToken);
+			currentToken = "";
+		}
+		i++;
+	}
+	tokens.push_back(currentToken);
+	return tokens;
+}
+
 void (*GuiData_tick)(GuiData*);
 void _GuiData_tick(GuiData* _guiData) {
 	if(!guiData)
@@ -112,8 +132,6 @@ void _GuiData_tick(GuiData* _guiData) {
 
 void (*GuiData_displayChatMessage)(GuiData*, const std::string&, const std::string&);
 void _GuiData_displayChatMessage(GuiData* self, const std::string& owner, const std::string& msg) {
-	//GuiData_displayChatMessage(self, owner, msg);
-
 	set_cmd = msg;
 
 	min.x = std::min(pos1.x, pos2.x);
@@ -123,18 +141,21 @@ void _GuiData_displayChatMessage(GuiData* self, const std::string& owner, const 
 	min.z = std::min(pos1.z, pos2.z);
 	max.z = std::max(pos1.z, pos2.z);
 
-			if(set_cmd == "set 4:0") {
+	std::vector<std::string> pars = strSplit(set_cmd, ' ');
 
-				//unsigned char block_id = i;
+	if(pars[0] == "$set") {
+		std::vector<std::string> blockArgs = strSplit(pars[1], ':');
+		int blockId = stoi(blockArgs[0]);
+		int data = stoi(blockArgs[1]);
 
-				//for(int ix = min.x; ix <= max.x; ix++) {
-					//for(int iy = min.y; iy <= max.y; iy++) {
-						//for(int iz = min.z; iz <= min.z; iz++) {
-							BlockSource$setBlockAndData(now_region, {pos1.x, pos1.y, pos1.z}, 5, 1, 3);
-						//}
-					//}
-				//}
+		for(int ix = min.x; ix <= max.x; ix++) {
+			for(int iy = min.y; iy <= max.y; iy++) {
+				for(int iz = min.z; iz <= max.z; iz++) {
+					BlockSource$setBlockAndData(now_region, {ix, iy, iz}, blockId, data, 3);
+				}
 			}
+		}
+	}
 
 	set_cmd = "wait_msg";
 }
@@ -144,18 +165,22 @@ bool _Item_useOn(Item* self, ItemInstance* inst, Player* player, int x, int y, i
 	if(self == Item$mItems[271]) {
 		pos1 = {x, y, z};
 
-		GuiData$displayClientMessage(guiData, "§9You set pos1!");
+		char buf[50];
+		sprintf(buf, "§cYou set pos1 at %d, %d, %d", pos1.x, pos1.y, pos1.z);
+		GuiData$displayClientMessage(guiData, std::string(buf));
 	}
 
 	return Item_useOn(self, inst, player, x, y, z, side, xx, yy, zz);
 }
 
-bool (*GameMode_creativeDestroyBlock)(GameMode*, Player&, BlockPos, signed char);
-bool _GameMode_creativeDestroyBlock(GameMode* self, Player& player, BlockPos pos, signed char side) {
+bool (*GameMode_creativeDestroyBlock)(GameMode*, Player&, const BlockPos&, signed char);
+bool _GameMode_creativeDestroyBlock(GameMode* self, Player& player, const BlockPos& pos, signed char side) {
 	if(Player$getSelectedItem(&player)->item == Item$mItems[271]) {
 		pos2 = pos;
 
-		GuiData$displayClientMessage(guiData, "§cYou set pos2!");
+		char buf[50];
+		sprintf(buf, "§9You set pos2 at %d, %d, %d", pos2.x, pos2.y, pos2.z);
+		GuiData$displayClientMessage(guiData, std::string(buf));
 
 		return false;
 	}
