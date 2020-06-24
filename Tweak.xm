@@ -1,6 +1,7 @@
 #import "substrate.h"
 #include <string>
 #include <vector>
+#include <cstdio>
 #include <mach-o/dyld.h>
 
 
@@ -145,13 +146,29 @@ void _GuiData_displayChatMessage(GuiData* self, const std::string& owner, const 
 
 	if(pars[0] == "$set") {
 		std::vector<std::string> blockArgs = strSplit(pars[1], ':');
-		int blockId = stoi(blockArgs[0]);
-		int data = stoi(blockArgs[1]);
+		if(blockArgs[0] != "") {
+			const char* blockStr = blockArgs[0].c_str();
+			char* endBlock = nullptr;
+			unsigned blockId = strtoul(blockStr, &endBlock, 10);
+			if(endBlock == blockStr || *endBlock != '\0') {
+				GuiData$displayClientMessage(self, "§cError: Invalid block ID entered!");
+				return;
+			}
 
-		for(int ix = min.x; ix <= max.x; ix++) {
-			for(int iy = min.y; iy <= max.y; iy++) {
-				for(int iz = min.z; iz <= max.z; iz++) {
-					BlockSource$setBlockAndData(now_region, {ix, iy, iz}, blockId, data, 3);
+			const char* dataStr = blockArgs[1].c_str();
+			char* endData = nullptr;
+			unsigned data = strtoul(dataStr, &endData, 10);
+			if(endData == dataStr || *endData != '\0') {
+				GuiData$displayClientMessage(self, "§aInvalid data value entered! Using 0 instead");
+				data = 0;
+			}
+
+
+			for(int ix = min.x; ix <= max.x; ix++) {
+				for(int iy = min.y; iy <= max.y; iy++) {
+					for(int iz = min.z; iz <= max.z; iz++) {
+						BlockSource$setBlockAndData(now_region, {ix, iy, iz}, blockId, data, 3);
+					}
 				}
 			}
 		}
